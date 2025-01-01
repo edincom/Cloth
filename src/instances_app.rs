@@ -76,17 +76,58 @@ impl Instance {
     }
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Spring {
     stiffness: f32,
     rest_length: f32,
-    index_a: u32,
-    index_b: u32,
+    instance_a: u32,
+    instance_b: u32,
+}
+
+fn generate_structural_springs(grid_size: u32, spacing: f32) -> Vec<Spring> {
+    let mut springs = Vec::new();
+    
+    for row in 0..grid_size {
+        for col in 0..grid_size {
+            let current = row * grid_size + col;
+            
+            // Horizontal spring
+            if col < grid_size - 1 {
+                springs.push(Spring {
+                    instance_a: current,
+                    instance_b: current + 1,
+                    rest_length: spacing,
+                    stiffness: 1000.0,
+                });
+            }
+            
+            // Vertical spring
+            if row < grid_size - 1 {
+                springs.push(Spring {
+                    instance_a: current,
+                    instance_b: current + grid_size,
+                    rest_length: spacing,
+                    stiffness: 1000.0,
+                });
+            }
+        }
+    }
+    springs
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct TimeUniform {
     generation_duration: f32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct SimParams {
+    delta_time: f32,
+    damping: f32,
+    mass: f32,
 }
 
 pub struct InstanceApp {
@@ -105,7 +146,6 @@ pub struct InstanceApp {
     sphere_vertex_buffer: wgpu::Buffer,
     num_sphere_indices: u32,
     sphere_render_pipeline: wgpu::RenderPipeline,
-    time_buffer: wgpu::Buffer, // Add this field
 }
 
 fn generate_grid(
@@ -186,12 +226,20 @@ impl InstanceApp {
         let time_uniform = TimeUniform {
             generation_duration: Duration::new(0, 1_000_000).as_secs_f32(), // Use the generation_duration from the struct
         };
-        
-        let time_buffer = context.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Time Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[time_uniform]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+
+
+
+        // Beginning spring structure
+
+        let springs = generate_structural_springs(GRID_SIZE, 0.002);
+
+        let spring_buffer = context.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Spring Buffer"),
+            contents: bytemuck::cast_slice(&springs),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
         });
+
+        // End Spring structure
 
         let vertex_buffer =
             context
@@ -251,7 +299,22 @@ impl InstanceApp {
                 usage: wgpu::BufferUsages::INDEX,
             });
 
+        //Simulation parameters
 
+        let simulation_parameters = [
+            1.0,            // Mass of a particule
+            1.0,            // Stiffness constant of spring 1 (Structural springs)
+            1.1,            // Rest length of spring 1
+            0.87,           // Stiffness constant of spring 2 (Shear springs)
+            1.1,            // Rest length of spring 2
+            3.14,           // Stiffness constant of spring 3 (Bend spring)
+            1.1,            // Rest length of spring 3
+            sphere_radius,  // Sphere Radius
+            4.5,
+        ];
+
+
+        
 
         // Grid logic
         let shader = context
@@ -275,6 +338,21 @@ impl InstanceApp {
         let camera_bind_group_layout = context
             .device()
             .create_bind_group_layout(&CameraUniform::desc());
+
+        // Create simulation parameters buffer
+        let sim_params = SimParams {
+            delta_time: 0.016, // 60 FPS
+            damping: 0.01,
+            mass: 1.0,
+            };
+    
+    
+        let sim_params_buffer = context.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Simulation Parameters Buffer"),
+            contents: bytemuck::cast_slice(&[sim_params]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
 
         let instance_bind_group_layout = context.device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Compute Bind Group Layout"),
@@ -300,9 +378,21 @@ impl InstanceApp {
                     count: None,
                 },
 
-                // Uniform buffer for time
+                // Uniform buffer for springs
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+
+                // Uniform buffer for the simulation parameters
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
@@ -310,9 +400,10 @@ impl InstanceApp {
                         min_binding_size: None,
                     },
                     count: None,
-                },    
+                },  
             ],
         });
+
 
         let pipeline_layout =
             context
@@ -323,10 +414,13 @@ impl InstanceApp {
                     push_constant_ranges: &[],
                 });
 
-        let compute_pipeline_layout = context.device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Compute Pipeline Layout"),
-            bind_group_layouts: &[&instance_bind_group_layout],
-            push_constant_ranges: &[],
+        let compute_pipeline_layout = 
+            context
+                .device()
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Compute Pipeline Layout"),
+                    bind_group_layouts: &[&instance_bind_group_layout],
+                    push_constant_ranges: &[],
         });
 
         let render_pipeline =
@@ -415,7 +509,11 @@ impl InstanceApp {
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: time_buffer.as_entire_binding(),
+                        resource: spring_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: sim_params_buffer.as_entire_binding(),
                     }
                     ],
                 }),
@@ -434,10 +532,14 @@ impl InstanceApp {
                     resource: instance_buffer[0].as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: time_buffer.as_entire_binding(),
+                    binding: 2,
+                    resource: spring_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: sim_params_buffer.as_entire_binding(),
                     }
-                ],
+                    ],
                 }),
             ];
 
@@ -517,7 +619,6 @@ impl InstanceApp {
             sphere_vertex_buffer,
             num_sphere_indices: indices.len() as u32,
             sphere_render_pipeline,
-            time_buffer,
         }
     }
 

@@ -7,6 +7,20 @@ struct Instance {
     speed: vec4<f32>,
 };
 
+struct Spring {
+    instance_a: u32,
+    instance_b: u32,
+    rest_length: f32,
+    stiffness: f32,
+}
+
+
+struct SimParams {
+    delta_time: f32,
+    damping: f32,
+    mass: f32,
+}
+
 // Instance storage buffers
 @group(0) @binding(0) var<storage, read_write> instances_ping: array<Instance>;
 @group(0) @binding(1) var<storage, read_write> instances_pong: array<Instance>;
@@ -15,10 +29,11 @@ struct TimeUniform {
     generation_duration: f32,
 };
 
-@group(0) @binding(2) var<uniform> time: TimeUniform;
+@group(0) @binding(2) var<storage, read> springs: array<Spring>;
+@group(0) @binding(3) var<uniform> params: SimParams;
 
 // Gravity constant (downward acceleration)
-const GRAVITY: f32 = -9.8; // m/s² (adjust as needed)
+const GRAVITY: f32 = -1.8; // m/s² (adjust as needed)
 
 //Ground level
 const GROUND_LEVEL: f32 = 0.0; // Define the ground level
@@ -30,7 +45,7 @@ fn computeMain(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var instance = instances_ping[index];
 
     // Since we're updating more frequently, we use the actual delta time
-    let delta_time = time.generation_duration;
+    // let delta_time = time.generation_duration;
 
     // Update velocity (using real physics equations)
     instance.speed[1] += GRAVITY * 0.016;
@@ -58,6 +73,11 @@ fn computeMain(@builtin(global_invocation_id) global_id: vec3<u32>) {
         instance.speed.y = (instance.speed.y - 2.0 * dot_product * normal.y) * damping;
         instance.speed.z = (instance.speed.z - 2.0 * dot_product * normal.z) * damping;
     }
+
+
+    // Calculation of the forces Applied on the particules
+
+
 
     instances_pong[index] = instance;
 }
