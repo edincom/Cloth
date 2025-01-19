@@ -78,6 +78,16 @@ impl Instance {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct DebugData {
+    gravity_force: f32,
+    spring_forces: [f32; 32],  // Assuming max 32 springs affecting the particle
+    total_force: f32,
+    final_force: f32,
+}
+
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Spring {
     stiffness: f32,
     rest_length: f32,
@@ -87,6 +97,8 @@ struct Spring {
 
 fn generate_structural_springs(grid_size: u32, spacing: f32) -> Vec<Spring> {
     let mut springs = Vec::new();
+    
+    // println!("Generating structural springs for grid size: {}", grid_size); // Debug line
     
     for row in 0..grid_size {
         for col in 0..grid_size {
@@ -98,8 +110,9 @@ fn generate_structural_springs(grid_size: u32, spacing: f32) -> Vec<Spring> {
                     instance_a: current,
                     instance_b: current + 1,
                     rest_length: spacing,
-                    stiffness: 1000.0,
+                    stiffness: 100.0,
                 });
+                //println!("Horizontal spring: {} <-> {}", current, current + 1); // Debug line
             }
             
             // Vertical spring
@@ -108,13 +121,101 @@ fn generate_structural_springs(grid_size: u32, spacing: f32) -> Vec<Spring> {
                     instance_a: current,
                     instance_b: current + grid_size,
                     rest_length: spacing,
-                    stiffness: 1000.0,
+                    stiffness: 100.0,
+                });
+                //println!("Vertical spring: {} <-> {}", current, current + grid_size); // Debug line
+            }
+        }
+    }
+    println!("Total number of springs generated: {}", springs.len()); // Debug line
+    springs
+}
+
+fn generate_springs(grid_size: u32, spacing: f32) -> Vec<Spring> {
+    let mut springs = Vec::new();
+    
+    // Constants for spring types
+    let structural_stiffness = 1000.0;
+    let shear_stiffness = 800.0;  // Slightly less stiff than structural
+    let bend_stiffness = 500.0;   // Even less stiff for bend springs
+    
+    // Calculate rest lengths
+    let structural_rest = spacing;
+    let shear_rest = spacing * 2.0_f32.sqrt();  // Diagonal distance
+    let bend_rest = spacing * 2.0;              // Double spacing distance
+    
+    for row in 0..grid_size {
+        for col in 0..grid_size {
+            let current = row * grid_size + col;
+            
+            // Structural springs (horizontal and vertical)
+            if col < grid_size - 1 {
+                // Horizontal structural
+                springs.push(Spring {
+                    instance_a: current,
+                    instance_b: current + 1,
+                    rest_length: structural_rest,
+                    stiffness: structural_stiffness,
+                });
+            }
+            if row < grid_size - 1 {
+                // Vertical structural
+                springs.push(Spring {
+                    instance_a: current,
+                    instance_b: current + grid_size,
+                    rest_length: structural_rest,
+                    stiffness: structural_stiffness,
+                });
+            }
+            
+            // Shear springs (diagonal)
+            if row < grid_size - 1 && col < grid_size - 1 {
+                // Diagonal down-right
+                springs.push(Spring {
+                    instance_a: current,
+                    instance_b: current + grid_size + 1,
+                    rest_length: shear_rest,
+                    stiffness: shear_stiffness,
+                });
+                // Diagonal down-left (from the right vertex)
+                springs.push(Spring {
+                    instance_a: current + 1,
+                    instance_b: current + grid_size,
+                    rest_length: shear_rest,
+                    stiffness: shear_stiffness,
+                });
+            }
+            
+            // Bend springs (skip one particle)
+            // Horizontal bend springs
+            if col < grid_size - 2 {
+                springs.push(Spring {
+                    instance_a: current,
+                    instance_b: current + 2,
+                    rest_length: bend_rest,
+                    stiffness: bend_stiffness,
+                });
+            }
+            // Vertical bend springs
+            if row < grid_size - 2 {
+                springs.push(Spring {
+                    instance_a: current,
+                    instance_b: current + (grid_size * 2),
+                    rest_length: bend_rest,
+                    stiffness: bend_stiffness,
                 });
             }
         }
     }
+    
+    println!("Generated springs: {} structural, {} shear, {} bend", 
+             (grid_size - 1) * grid_size * 2,  // structural springs count
+             (grid_size - 1) * (grid_size - 1) * 2,  // shear springs count
+             (grid_size - 2) * grid_size * 2); // bend springs count
+    
     springs
 }
+
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -146,6 +247,7 @@ pub struct InstanceApp {
     sphere_vertex_buffer: wgpu::Buffer,
     num_sphere_indices: u32,
     sphere_render_pipeline: wgpu::RenderPipeline,
+    debug_buffer : wgpu::Buffer,
 }
 
 fn generate_grid(
@@ -156,11 +258,14 @@ fn generate_grid(
     displacement: f32,
     sphere_scale: f32,
     sphere_color: [f32; 3],
-) -> (Vec<Vertex>, wgpu::Buffer, Vec<Instance>, Vec<Instance>, Vec<u32>) {  // Added Vec<u32> to return type, and Added second instances list
+) -> (Vec<Vertex>, wgpu::Buffer, Vec<Instance>, Vec<Instance>, Vec<u32>) {
+    println!("Generating grid: rows = {}, cols = {}", rows, cols); // Debug line
+
     // Generate icosphere
     let (positions, indices) = icosphere(2);
+    println!("Generated icosphere with {} vertices and {} indices", positions.len(), indices.len()); // Debug line
 
-    // Create vertices with positions and colors
+    // Create vertices
     let vertices: Vec<Vertex> = positions
         .iter()
         .map(|position| Vertex {
@@ -169,6 +274,7 @@ fn generate_grid(
             color: sphere_color,
         })
         .collect();
+    //println!("Created {} vertices", vertices.len()); // Debug line
 
     // Create index buffer
     let index_buffer = context
@@ -195,16 +301,16 @@ fn generate_grid(
             })
         })
         .collect();
+    println!("Created {} instances", instances.len()); // Debug line
 
-    // Create a second copy of the instances list
     let instances_copy = instances.clone();
 
     (vertices, index_buffer, instances, instances_copy, indices)  // Return indices as well
 }
 
 
-const WORKGROUP_SIZE: u32 = 128;
-const GRID_SIZE: u32 = 256;
+const WORKGROUP_SIZE: u32 = 64;
+const GRID_SIZE: u32 = 64;
 
 impl InstanceApp {
     pub fn new(context: &Context) -> Self {
@@ -231,7 +337,8 @@ impl InstanceApp {
 
         // Beginning spring structure
 
-        let springs = generate_structural_springs(GRID_SIZE, 0.002);
+        // let springs = generate_structural_springs(GRID_SIZE, 0.002);
+        let springs = generate_springs(GRID_SIZE, 0.002);
 
         let spring_buffer = context.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Spring Buffer"),
@@ -341,8 +448,8 @@ impl InstanceApp {
 
         // Create simulation parameters buffer
         let sim_params = SimParams {
-            delta_time: 0.016, // 60 FPS
-            damping: 0.01,
+            delta_time: 0.001, // 60 FPS
+            damping: 0.05,
             mass: 1.0,
             };
     
@@ -383,7 +490,7 @@ impl InstanceApp {
                     binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -400,8 +507,27 @@ impl InstanceApp {
                         min_binding_size: None,
                     },
                     count: None,
-                },  
+                },
+
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,  // New binding
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
+        });
+
+        // Create the debug buffer
+        let debug_buffer = context.device().create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Debug Buffer"),
+            size: std::mem::size_of::<DebugData>() as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
         });
 
 
@@ -514,7 +640,11 @@ impl InstanceApp {
                     wgpu::BindGroupEntry {
                         binding: 3,
                         resource: sim_params_buffer.as_entire_binding(),
-                    }
+                    },
+                    wgpu::BindGroupEntry {  // Add this new entry
+                        binding: 4,
+                        resource: debug_buffer.as_entire_binding(),
+                    }    
                     ],
                 }),
             context
@@ -538,6 +668,11 @@ impl InstanceApp {
                     wgpu::BindGroupEntry {
                     binding: 3,
                     resource: sim_params_buffer.as_entire_binding(),
+                    },
+
+                    wgpu::BindGroupEntry {  // Add this new entry
+                        binding: 4,
+                        resource: debug_buffer.as_entire_binding(),
                     }
                     ],
                 }),
@@ -619,6 +754,7 @@ impl InstanceApp {
             sphere_vertex_buffer,
             num_sphere_indices: indices.len() as u32,
             sphere_render_pipeline,
+            debug_buffer,
         }
     }
 
@@ -647,7 +783,37 @@ impl App for InstanceApp {
                 compute_pass.dispatch_workgroups(self.num_instances / WORKGROUP_SIZE, 1, 1);
             }
 
+
+            let debug_staging_buffer = context.device().create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Debug Staging Buffer"),
+                size: std::mem::size_of::<DebugData>() as wgpu::BufferAddress,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
+            // Copy debug data
+            encoder.copy_buffer_to_buffer(
+                &self.debug_buffer,
+                0,
+                &debug_staging_buffer,
+                0,
+                std::mem::size_of::<DebugData>() as wgpu::BufferAddress,
+            );
+
             context.queue().submit(std::iter::once(encoder.finish()));
+
+            // After submitting command encoder:
+            let debug_slice = debug_staging_buffer.slice(..);
+            debug_slice.map_async(wgpu::MapMode::Read, |_| {});
+            context.device().poll(wgpu::Maintain::Wait);
+
+            let data = debug_slice.get_mapped_range();
+            let debug_data: DebugData = bytemuck::cast_slice(&data)[0];
+            println!("Forces on instance 0:");
+            println!("  Gravity force: {}", debug_data.gravity_force);
+            println!("  Total spring force: {}", debug_data.total_force);
+            println!("  Final force (with damping): {}", debug_data.final_force);
+
             self.last_generation = Instant::now();
 
             // Swap the ping-pong buffers
