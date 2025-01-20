@@ -29,7 +29,8 @@ fn calculate_spring_force(pos1: vec3<f32>, pos2: vec3<f32>, rest_length: f32, k:
     let delta = pos2 - pos1;
     let current_length = length(delta);
     let direction = normalize(delta);
-    return k * (current_length - rest_length) * direction;
+    let extension = clamp(current_length - rest_length, -rest_length*6, rest_length*6); // Limite l'extension
+    return k * extension * direction;
 }
 
 @compute @workgroup_size(WORKGROUP_SIZE)
@@ -43,10 +44,10 @@ fn computeMain(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let col = index % grid_size;
 
     // Fixer les points du bord supérieur
-    if (row == 0) {
-        instances_pong[index] = instance;
-        return;
-    }
+    // if (row == 0) {
+    //     instances_pong[index] = instance;
+    //     return;
+    // }
 
     // Position actuelle du point
     let pos = instance.position.xyz;
@@ -149,6 +150,7 @@ fn computeMain(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let sphere_radius = 0.3;
     let distance = length(instance.position.xyz);
     
+    
     if (distance < sphere_radius) {
         // Normal vector from sphere center to point
         let normal = normalize(instance.position.xyz);
@@ -176,25 +178,30 @@ fn computeMain(@builtin(global_invocation_id) global_id: vec3<u32>) {
             let It = Ro_t / Ro_t_magnitude;
             
             // Coefficient de friction
-            let cf = 0.5; // Ajustez cette valeur selon vos besoins
+            let cf = 0.8; // Ajustez cette valeur selon vos besoins
             
             // Force de friction
-            let friction_magnitude = min(Ro_t_magnitude, cf * abs(Ro_n_magnitude));
-            let friction_force = -friction_magnitude * It;
+            let friction_magnitude = -min(Ro_t_magnitude, cf * abs(Ro_n_magnitude));
+            let friction_force = friction_magnitude * It;
             
             // Ajout de la force de friction à la force totale
             total_force += friction_force;
         }
 
         // Réflexion de la vitesse avec amortissement
-        let damping = 0.8;
+        let damping = 0.1;
         let dot_product = dot(instance.speed.xyz, normal);
         instance.speed.x = (instance.speed.x - 2.0 * dot_product * normal.x) * damping;
         instance.speed.y = (instance.speed.y - 2.0 * dot_product * normal.y) * damping;
         instance.speed.z = (instance.speed.z - 2.0 * dot_product * normal.z) * damping;
     }
 
-    // Mise à jour de la vitesse
+    const MAX_FORCE: f32 = 50.0; // Ajustez selon vos besoins
+
+    if (length(total_force) > MAX_FORCE) {
+        total_force = normalize(total_force) * MAX_FORCE;
+    }
+
     let acceleration = total_force / physics.mass;
     instance.speed.x += acceleration.x * physics.dt;
     instance.speed.y += acceleration.y * physics.dt;

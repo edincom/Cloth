@@ -161,7 +161,7 @@ fn generate_grid(
 }
 
 const WORKGROUP_SIZE: u32 = 128;
-const GRID_SIZE: u32 = 512;
+const GRID_SIZE: u32 = 128;
 
 impl InstanceApp {
     pub fn new(context: &Context) -> Self {
@@ -169,7 +169,7 @@ impl InstanceApp {
             &context,
             GRID_SIZE,
             GRID_SIZE,
-            0.002,
+            0.006,
             1.0,
             0.003,
             [0.1, 0.1, 0.1]
@@ -189,16 +189,17 @@ impl InstanceApp {
         });
 
         let physics_params = PhysicsParams {
-            structural_k: 4000.0,  
-            shear_k: 2000.0,       
-            bend_k: 1000.0,        
-            damping: 2.0,         
-            mass: 1.5,        
-            rest_length: 0.002,
-            dt: 0.008,
+            structural_k: 15000.0,  
+            shear_k: 5000.0,       
+            bend_k: 7000.0,        
+            damping: 10.0,         
+            mass: 0.8,        
+            rest_length: 0.006,
+            dt: 0.005,
             //padding: 0.0,
-            friction: 0.8,
+            friction: 0.9,
         };
+ 
 
         let physics_buffer = context.device().create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
