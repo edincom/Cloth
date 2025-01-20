@@ -24,12 +24,13 @@ struct PhysicsParams {
 @group(0) @binding(3) var<uniform> physics: PhysicsParams;
 
 const GRAVITY: f32 = -9.81;
+const MAX_FORCE: f32 = 100.0; // Ajustez selon vos besoins
 
 fn calculate_spring_force(pos1: vec3<f32>, pos2: vec3<f32>, rest_length: f32, k: f32) -> vec3<f32> {
     let delta = pos2 - pos1;
     let current_length = length(delta);
     let direction = normalize(delta);
-    let extension = clamp(current_length - rest_length, -rest_length*6, rest_length*6); // Limite l'extension
+    let extension = clamp(current_length - rest_length, -rest_length*5, rest_length*5); // Limite l'extension
     return k * extension * direction;
 }
 
@@ -196,10 +197,9 @@ fn computeMain(@builtin(global_invocation_id) global_id: vec3<u32>) {
         instance.speed.z = (instance.speed.z - 2.0 * dot_product * normal.z) * damping;
     }
 
-    const MAX_FORCE: f32 = 50.0; // Ajustez selon vos besoins
 
     if (length(total_force) > MAX_FORCE) {
-        total_force = normalize(total_force) * MAX_FORCE;
+        total_force = normalize(total_force) * MAX_FORCE*0.8;
     }
 
     let acceleration = total_force / physics.mass;

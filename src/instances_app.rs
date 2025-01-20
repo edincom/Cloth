@@ -189,10 +189,10 @@ impl InstanceApp {
         });
 
         let physics_params = PhysicsParams {
-            structural_k: 15000.0,  
-            shear_k: 5000.0,       
-            bend_k: 7000.0,        
-            damping: 10.0,         
+            structural_k: 7000.0,  
+            shear_k: 3000.0,       
+            bend_k: 6000.0,        
+            damping: 5.0,         
             mass: 0.8,        
             rest_length: 0.006,
             dt: 0.005,
