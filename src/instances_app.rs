@@ -134,87 +134,99 @@ fn generate_structural_springs(grid_size: u32, spacing: f32) -> Vec<Spring> {
 fn generate_springs(grid_size: u32, spacing: f32) -> Vec<Spring> {
     let mut springs = Vec::new();
     
-    // Constants for spring types
-    let structural_stiffness = 1000.0;
-    let shear_stiffness = 800.0;  // Slightly less stiff than structural
-    let bend_stiffness = 500.0;   // Even less stiff for bend springs
-    
-    // Calculate rest lengths
     let structural_rest = spacing;
-    let shear_rest = spacing * 2.0_f32.sqrt();  // Diagonal distance
-    let bend_rest = spacing * 2.0;              // Double spacing distance
+    let shear_rest = spacing * 2.0_f32.sqrt();
+    let bend_rest = spacing * 2.0;
     
-    for row in 0..grid_size {
-        for col in 0..grid_size {
-            let current = row * grid_size + col;
-            
-            // Structural springs (horizontal and vertical)
-            if col < grid_size - 1 {
-                // Horizontal structural
-                springs.push(Spring {
-                    instance_a: current,
-                    instance_b: current + 1,
-                    rest_length: structural_rest,
-                    stiffness: structural_stiffness,
-                });
+    for i in 0..grid_size * grid_size {
+        let col = (i % grid_size) as i32;
+        let row = (i / grid_size) as i32;
+
+        // Structural springs
+        for j in [-1, 1] {
+            // Horizontal (col ± 1)
+            let mut index2 = row * grid_size as i32 + col + j;
+            if col + j >= grid_size as i32 || col + j < 0 {
+                index2 = (grid_size * grid_size + 1) as i32;
             }
-            if row < grid_size - 1 {
-                // Vertical structural
-                springs.push(Spring {
-                    instance_a: current,
-                    instance_b: current + grid_size,
-                    rest_length: structural_rest,
-                    stiffness: structural_stiffness,
-                });
+            springs.push(Spring {
+                instance_a: i,
+                instance_b: index2 as u32,
+                rest_length: structural_rest,
+                stiffness: 1000.0,
+            });
+
+            // Vertical (row ± 1)
+            index2 = (row + j) * grid_size as i32 + col;
+            if row + j >= grid_size as i32 || row + j < 0 {
+                index2 = (grid_size * grid_size + 1) as i32;
             }
-            
-            // Shear springs (diagonal)
-            if row < grid_size - 1 && col < grid_size - 1 {
-                // Diagonal down-right
-                springs.push(Spring {
-                    instance_a: current,
-                    instance_b: current + grid_size + 1,
-                    rest_length: shear_rest,
-                    stiffness: shear_stiffness,
-                });
-                // Diagonal down-left (from the right vertex)
-                springs.push(Spring {
-                    instance_a: current + 1,
-                    instance_b: current + grid_size,
-                    rest_length: shear_rest,
-                    stiffness: shear_stiffness,
-                });
+            springs.push(Spring {
+                instance_a: i,
+                instance_b: index2 as u32,
+                rest_length: structural_rest,
+                stiffness: 1000.0,
+            });
+        }
+
+        // Shear springs
+        for j in [-1, 1] {
+            // Diagonal (col ± j, row ± j)
+            let mut index2 = (row + j) * grid_size as i32 + col + j;
+            if col + j >= grid_size as i32 || col + j < 0 || row + j >= grid_size as i32 || row + j < 0 {
+                index2 = (grid_size * grid_size + 1) as i32;
             }
-            
-            // Bend springs (skip one particle)
-            // Horizontal bend springs
-            if col < grid_size - 2 {
-                springs.push(Spring {
-                    instance_a: current,
-                    instance_b: current + 2,
-                    rest_length: bend_rest,
-                    stiffness: bend_stiffness,
-                });
+            springs.push(Spring {
+                instance_a: i,
+                instance_b: index2 as u32,
+                rest_length: shear_rest,
+                stiffness: 800.0,
+            });
+
+            // Diagonal (col ± j, row ∓ j)
+            index2 = (row - j) * grid_size as i32 + col + j;
+            if col + j >= grid_size as i32 || col + j < 0 || row - j >= grid_size as i32 || row - j < 0 {
+                index2 = (grid_size * grid_size + 1) as i32;
             }
-            // Vertical bend springs
-            if row < grid_size - 2 {
-                springs.push(Spring {
-                    instance_a: current,
-                    instance_b: current + (grid_size * 2),
-                    rest_length: bend_rest,
-                    stiffness: bend_stiffness,
-                });
+            springs.push(Spring {
+                instance_a: i,
+                instance_b: index2 as u32,
+                rest_length: shear_rest,
+                stiffness: 800.0,
+            });
+        }
+
+        // Bend springs
+        for j in [-1, 1] {
+            // Horizontal (col ± 2j)
+            let mut index2 = row * grid_size as i32 + col + 2 * j;
+            if col + 2 * j >= grid_size as i32 || col + 2 * j < 0 {
+                index2 = (grid_size * grid_size + 1) as i32;
             }
+            springs.push(Spring {
+                instance_a: i,
+                instance_b: index2 as u32,
+                rest_length: bend_rest,
+                stiffness: 500.0,
+            });
+
+            // Vertical (row ± 2j)
+            index2 = (row + 2 * j) * grid_size as i32 + col;
+            if row + 2 * j >= grid_size as i32 || row + 2 * j < 0 {
+                index2 = (grid_size * grid_size + 1) as i32;
+            }
+            springs.push(Spring {
+                instance_a: i,
+                instance_b: index2 as u32,
+                rest_length: bend_rest,
+                stiffness: 500.0,
+            });
         }
     }
-    
-    println!("Generated springs: {} structural, {} shear, {} bend", 
-             (grid_size - 1) * grid_size * 2,  // structural springs count
-             (grid_size - 1) * (grid_size - 1) * 2,  // shear springs count
-             (grid_size - 2) * grid_size * 2); // bend springs count
-    
+
     springs
 }
+
 
 
 #[repr(C)]
@@ -319,7 +331,7 @@ impl InstanceApp {
             &context,
             GRID_SIZE,          // rows
             GRID_SIZE,          // cols
-            0.002,        // spacing (closer together for cloth-like appearance)
+            0.02,        // spacing (closer together for cloth-like appearance)
             1.0,         // displacement, where it starts on the y axis
             0.003,        // sphere_scale (smaller spheres to look like connection points)
             [0.1, 0.1, 0.1]    // color
@@ -338,7 +350,7 @@ impl InstanceApp {
         // Beginning spring structure
 
         // let springs = generate_structural_springs(GRID_SIZE, 0.002);
-        let springs = generate_springs(GRID_SIZE, 0.002);
+        let springs = generate_springs(GRID_SIZE, 0.02);
 
         let spring_buffer = context.device().create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Spring Buffer"),
@@ -436,7 +448,7 @@ impl InstanceApp {
         .create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Compute Shader"),
             source: wgpu::ShaderSource::Wgsl(
-            include_str!("compute.wgsl")
+            include_str!("compute4.wgsl")
                 .replace("WORKGROUP_SIZE", &format!("{}", WORKGROUP_SIZE))
                 .into()
             ),
@@ -448,7 +460,7 @@ impl InstanceApp {
 
         // Create simulation parameters buffer
         let sim_params = SimParams {
-            delta_time: 0.001, // 60 FPS
+            delta_time: 0.016, // 60 FPS
             damping: 0.05,
             mass: 1.0,
             };
@@ -825,9 +837,6 @@ impl App for InstanceApp {
 
         render_pass.set_bind_group(0, self.camera.bind_group(), &[]);
 
-
-        
-
         // Render the grid
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
@@ -843,7 +852,6 @@ impl App for InstanceApp {
         render_pass.draw_indexed(0..self.num_sphere_indices, 0, 0..1);
 
 
-        
     }
     
 }
