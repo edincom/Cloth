@@ -1,0 +1,36 @@
+Tissus Souple 
+//instances_app.rs
+let physics_params = PhysicsParams {
+    structural_k: 1500.0,  // Force structurelle réduite
+    shear_k: 700.0,       // Moins de résistance au cisaillement
+    bend_k: 200.0,        // Très faible résistance à la flexion
+    damping: 0.8,         // Moins d'amortissement pour plus de mouvement
+    mass: 0.8,            // Masse légère
+    rest_length: 0.002,
+    dt: 0.008,
+    padding: 0.0,
+};
+
+Tissus rigide (jean)
+let physics_params = PhysicsParams {
+    structural_k: 3000.0,  // Force structurelle élevée
+    shear_k: 1500.0,      // Forte résistance au cisaillement
+    bend_k: 800.0,        // Forte résistance à la flexion
+    damping: 1.5,         // Plus d'amortissement
+    mass: 1.2,            // Masse plus importante
+    rest_length: 0.002,
+    dt: 0.008,
+    padding: 0.0,
+};
+
+Tissus très rigide (cuir)
+let physics_params = PhysicsParams {
+    structural_k: 4000.0,  // Force structurelle très élevée
+    shear_k: 2000.0,      // Très forte résistance au cisaillement
+    bend_k: 1200.0,       // Très forte résistance à la flexion
+    damping: 2.0,         // Amortissement important
+    mass: 1.5,            // Masse importante
+    rest_length: 0.002,
+    dt: 0.008,
+    padding: 0.0,
+};
